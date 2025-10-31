@@ -2,7 +2,7 @@
 // Firebase configuration
 // Replace with your own Firebase project configuration
 export const firebaseConfig = {
-  apiKey: "AIzaSyDSWu4DRiEl7jvhGNS9L3_FSumjlVR4aGo",
+  apiKey: "",
   authDomain: "habit-tracker-edca5.firebaseapp.com",
   projectId: "habit-tracker-edca5",
   storageBucket: "habit-tracker-edca5.firebasestorage.app",
