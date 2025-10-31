@@ -1,0 +1,5 @@
+{
+  "name": "AI Habit Coach & Tracker",
+  "description": "A comprehensive web application to track habits, visualize progress, and receive personalized feedback from an AI-powered coach using Retrieval-Augmented Generation (RAG).",
+  "requestFramePermissions": []
+}
