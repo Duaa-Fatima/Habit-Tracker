@@ -2,22 +2,28 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { Habit, HabitStats } from "../types";
 import { KNOWLEDGE_BASE } from "../constants";
 
-const API_KEY = process.env.GEMINI_API_KEY;
 
-if (!API_KEY) {
-  console.error("GEMINI_API_KEY is not set. Please make sure it is defined in your .env file and exposed in vite.config.ts");
+// Use the process.env variable defined in vite.config.ts
+const API_KEY = process.env.VITE_GEMINI_API_KEY;
+
+// Log the API key to the console for debugging
+console.log("Attempting to initialize Gemini with API Key:", API_KEY ? "Key Found" : "Key Not Found");
+
+if (!API_KEY || API_KEY === 'YOUR_API_KEY_HERE') {
+  console.error("VITE_GEMINI_API_KEY is not set. Please check your .env file and vite.config.ts.");
 }
 
-const ai = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
-const model = "gemini-1.5-flash-latest";
+const ai = (API_KEY && API_KEY !== 'YOUR_API_KEY_HERE') ? new GoogleGenerativeAI(API_KEY) : null;
+// Correct model name
+const model = "gemini-1.5-flash"; 
+
+console.log("Gemini AI Service initialized with model:", model);
 
 function formatHabitDataForPrompt(habits: Habit[], stats: Map<string, HabitStats>): string {
   if (habits.length === 0) {
     return "The user has not added any habits yet.";
   }
-
-  let habitDataString = "Here is a summary of the user\'s current habits and their recent performance:\n\n";
-
+  let habitDataString = "Here is a summary of the user's current habits and their recent performance:\n\n";
   habits.forEach((habit) => {
     const habitStats = stats.get(habit.id);
     habitDataString += `Habit: \"${habit.name}\" (Category: ${habit.category})\n`;
@@ -35,7 +41,6 @@ function formatHabitDataForPrompt(habits: Habit[], stats: Map<string, HabitStats
     }
     habitDataString += "\n";
   });
-
   return habitDataString;
 }
 
@@ -45,13 +50,14 @@ export async function* generateCoachResponseStream(
   habits: Habit[],
   stats: Map<string, HabitStats>
 ): AsyncGenerator<string> {
+  console.log("--- 🧠 Generating Coach Response Stream ---");
   if (!ai) {
-    yield "I\'m sorry, the AI service is not configured. Please check your API key.";
+    console.error("AI service not available in generateCoachResponseStream.");
+    yield "I'm sorry, the AI service is not configured. Please add your API key to the .env file and restart the server.";
     return;
   }
 
   const habitContext = formatHabitDataForPrompt(habits, stats);
-
   const prompt = `
 You are \"Aura,\" a warm, empathetic, and deeply knowledgeable AI Habit Coach. Your sole purpose is to support and guide users on their journey of self-improvement.
 
@@ -78,11 +84,12 @@ User’s Question:
 
 Now, write Aura’s response below (without markdown, bold text, or symbols). Keep it warm, natural, and human:
 `;
+  
+  console.log("Coach Response Prompt:", prompt);
 
   try {
     const generativeModel = ai.getGenerativeModel({ model });
     const result = await generativeModel.generateContentStream(prompt);
-
     for await (const chunk of result.stream) {
       const chunkText = chunk.text();
       const words = chunkText.split(/\s+/);
@@ -93,7 +100,9 @@ Now, write Aura’s response below (without markdown, bold text, or symbols). Ke
     }
   } catch (error) {
     console.error("Error generating coach response:", error);
-    yield "I\'m sorry, I\'m having trouble connecting right now. Please try again later.";
+    // Log the full error object for more details
+    console.error("Full error object in generateCoachResponseStream:", JSON.stringify(error, null, 2));
+    yield "I'm sorry, I'm having trouble connecting right now. Please try again later.";
   }
 }
 
@@ -102,8 +111,10 @@ export const generateAnalyticsSummary = async (
   habits: Habit[],
   stats: Map<string, HabitStats>
 ): Promise<string> => {
+  console.log("--- 📊 Generating Analytics Summary ---");
   if (!ai) {
-    return "Could not generate summary at this time.";
+    console.error("AI service not available in generateAnalyticsSummary.");
+    return "Could not generate summary at this time. Please add your API key to the .env file.";
   }
   const habitContext = formatHabitDataForPrompt(habits, stats);
   const prompt = `
@@ -118,19 +129,25 @@ ${habitContext}
 Your Summary:
 `;
 
+  console.log("Analytics Summary Prompt:", prompt);
+
   try {
     const generativeModel = ai.getGenerativeModel({ model });
     const result = await generativeModel.generateContent(prompt);
     return result.response.text().replace(/\*\*/g, ""); // remove markdown
   } catch (error) {
     console.error("Error generating analytics summary:", error);
+    // Log the full error object for more details
+    console.error("Full error object in generateAnalyticsSummary:", JSON.stringify(error, null, 2));
     return "Could not generate summary at this time.";
   }
 };
 
 // ✨ CLEAN MOTIVATIONAL QUOTE GENERATOR
 export const generateMotivationalQuote = async (): Promise<string> => {
+  console.log("--- ✨ Generating Motivational Quote ---");
   if (!ai) {
+    console.error("AI service not available in generateMotivationalQuote.");
     return "Small daily actions create big lifelong change.";
   }
   const prompt = `
@@ -139,12 +156,16 @@ Avoid using quotation marks or markdown symbols.
 Format it cleanly and naturally.
 `;
 
+  console.log("Motivational Quote Prompt:", prompt);
+
   try {
     const generativeModel = ai.getGenerativeModel({ model });
     const result = await generativeModel.generateContent(prompt);
     return result.response.text().replace(/[\*\"]/g, "").trim();
   } catch (error) {
     console.error("Error generating motivational quote:", error);
+    // Log the full error object for more details
+    console.error("Full error object in generateMotivationalQuote:", JSON.stringify(error, null, 2));
     return "Small daily actions create big lifelong change.";
   }
 };
