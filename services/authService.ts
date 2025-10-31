@@ -1,72 +1,70 @@
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut as firebaseSignOut,
+  onAuthStateChanged,
+  User as FirebaseUser,
+} from 'firebase/auth';
+import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
+import { auth, db } from './firebase';
 import { User, Habit, MoodLog } from '../types';
 import { INITIAL_HABITS } from '../constants';
 
-const DB_KEY = 'aura_users_db';
-
-// Helper to get the database from localStorage
-const getDb = (): Record<string, any> => {
-  try {
-    const db = localStorage.getItem(DB_KEY);
-    return db ? JSON.parse(db) : {};
-  } catch {
-    return {};
-  }
-};
-
-// Helper to save the database to localStorage
-const saveDb = (db: Record<string, any>) => {
-  localStorage.setItem(DB_KEY, JSON.stringify(db));
-};
-
 // --- Authentication Functions ---
 
-export const signUp = (email: string, password: string): { success: boolean; error?: string; user?: User } => {
-  const db = getDb();
-  if (db[email]) {
-    return { success: false, error: 'User with this email already exists.' };
-  }
-
-  // In a real app, you'd hash the password
-  db[email] = {
-    password,
-    data: {
-      habits: [], // New users start with an empty habit list
-      plantGrowthLevel: 0,
-      moodLogs: [], // Initialize mood logs for new users
-    },
-  };
-  saveDb(db);
-
-  const user = { email };
-  localStorage.setItem('currentUser', JSON.stringify(user));
-  return { success: true, user };
-};
-
-export const signIn = (email: string, password: string): { success: boolean; error?: string; user?: User } => {
-  const db = getDb();
-  const userData = db[email];
-
-  if (!userData || userData.password !== password) {
-    return { success: false, error: 'Invalid email or password.' };
-  }
-  
-  const user = { email };
-  localStorage.setItem('currentUser', JSON.stringify(user));
-  return { success: true, user };
-};
-
-export const signOut = () => {
-  localStorage.removeItem('currentUser');
-};
-
-export const checkAuthStatus = (): User | null => {
+export const signUp = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> => {
   try {
-    const userJson = localStorage.getItem('currentUser');
-    return userJson ? JSON.parse(userJson) : null;
-  } catch {
-    return null;
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const firebaseUser = userCredential.user;
+
+    const user: User = { uid: firebaseUser.uid, email: firebaseUser.email };
+
+    // Create a new user document in Firestore
+    const userDocRef = doc(db, 'users', user.uid);
+    await setDoc(userDocRef, {
+      email: user.email,
+      habits: INITIAL_HABITS, // Start with initial habits
+      plantGrowthLevel: 0,
+      moodLogs: [],
+    });
+
+    return { success: true, user };
+  } catch (error: any) {
+    return { success: false, error: error.message };
   }
 };
+
+export const signIn = async (email: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> => {
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const firebaseUser = userCredential.user;
+    const user: User = { uid: firebaseUser.uid, email: firebaseUser.email };
+    return { success: true, user };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+};
+
+export const signOut = async (): Promise<void> => {
+  try {
+    await firebaseSignOut(auth);
+  } catch (error) {
+    console.error('Error signing out:', error);
+  }
+};
+
+export const checkAuthStatus = (callback: (user: User | null) => void): (() => void) => {
+  const unsubscribe = onAuthStateChanged(auth, (firebaseUser: FirebaseUser | null) => {
+    if (firebaseUser) {
+      const user: User = { uid: firebaseUser.uid, email: firebaseUser.email };
+      callback(user);
+    } else {
+      callback(null);
+    }
+  });
+  return unsubscribe;
+};
+
 
 // --- User Data Functions ---
 
@@ -76,22 +74,25 @@ interface UserData {
   moodLogs: MoodLog[];
 }
 
-export const loadUserData = (email: string): UserData => {
-  const db = getDb();
-  // New users or users with no data should start fresh.
-  const defaultData = { habits: [], plantGrowthLevel: 0, moodLogs: [] };
-  if (db[email]?.data) {
-    // Ensure moodLogs exists to prevent errors for older users
-    return { ...defaultData, ...db[email].data };
+export const loadUserData = async (userId: string | undefined): Promise<UserData> => {
+  if (!userId) {
+    return { habits: INITIAL_HABITS, plantGrowthLevel: 0, moodLogs: [] };
   }
-  // Return default data if something is wrong
-  return defaultData;
+  const userDocRef = doc(db, 'users', userId);
+  const docSnap = await getDoc(userDocRef);
+
+  if (docSnap.exists()) {
+    return docSnap.data() as UserData;
+  } else {
+    return { habits: INITIAL_HABITS, plantGrowthLevel: 0, moodLogs: [] };
+  }
 };
 
-export const saveUserData = (email: string, data: UserData) => {
-  const db = getDb();
-  if (db[email]) {
-    db[email].data = data;
-    saveDb(db);
+export const saveUserData = async (userId: string | undefined, data: Partial<UserData>): Promise<void> => {
+    if (!userId) {
+    console.error("Attempted to save data without a userId.");
+    return;
   }
+  const userDocRef = doc(db, 'users', userId);
+  await updateDoc(userDocRef, data);
 };

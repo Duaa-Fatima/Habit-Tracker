@@ -51,7 +51,8 @@ export interface ChatMessage {
 
 // Added User type for authentication
 export interface User {
-    email: string;
+    uid: string; // Changed from email to uid for robust user identification
+    email: string | null;
 }
 
 // --- New Mood Tracker Types ---

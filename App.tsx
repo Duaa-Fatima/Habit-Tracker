@@ -8,7 +8,7 @@ import Gamification from './components/Gamification';
 import FocusSessionModal from './components/FocusSessionModal';
 import Confetti from './components/Confetti';
 import AuthPage from './components/AuthPage';
-import MoodTracker from './components/MoodTracker'; // Import new component
+import MoodTracker from './components/MoodTracker';
 import { Habit, LogStatus, HabitStats, User, View, MoodLog } from './types';
 import { calculateStats, calculateOverallStats } from './utils/stats';
 import * as authService from './services/authService';
@@ -17,7 +17,7 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [habits, setHabits] = useState<Habit[]>([]);
-  const [moodLogs, setMoodLogs] = useState<MoodLog[]>([]); // New state for moods
+  const [moodLogs, setMoodLogs] = useState<MoodLog[]>([]);
   const [stats, setStats] = useState<Map<string, HabitStats>>(new Map());
   const [activeView, setActiveView] = useState<View>('habits');
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -26,60 +26,65 @@ const App: React.FC = () => {
   const [showConfetti, setShowConfetti] = useState(false);
   const [plantGrowthLevel, setPlantGrowthLevel] = useState(0);
 
-  // Check auth status on initial load
+  // Check auth status and load initial data
   useEffect(() => {
-    const user = authService.checkAuthStatus();
-    if (user) {
-      setCurrentUser(user);
-      const data = authService.loadUserData(user.email);
-      setHabits(data.habits);
-      setPlantGrowthLevel(data.plantGrowthLevel);
-      setMoodLogs(data.moodLogs || []); // Load mood logs
-    }
-    setIsLoadingAuth(false);
+    const unsubscribe = authService.checkAuthStatus(async (user) => {
+      if (user) {
+        setCurrentUser(user);
+        const data = await authService.loadUserData(user.uid);
+        setHabits(data.habits || []);
+        setPlantGrowthLevel(data.plantGrowthLevel || 0);
+        setMoodLogs(data.moodLogs || []);
+      } else {
+        setCurrentUser(null);
+        // Reset state when user logs out
+        setHabits([]);
+        setPlantGrowthLevel(0);
+        setMoodLogs([]);
+      }
+      setIsLoadingAuth(false);
+    });
+
+    // Cleanup subscription on unmount
+    return () => unsubscribe();
   }, []);
   
-  // Create a combined data object for saving
-  const userData = useMemo(() => ({
-    habits,
-    plantGrowthLevel,
-    moodLogs
-  }), [habits, plantGrowthLevel, moodLogs]);
+  // Recalculate stats when habits change
+  useEffect(() => {
+    const newStats = new Map<string, HabitStats>();
+    habits.forEach(habit => {
+      newStats.set(habit.id, calculateStats(habit));
+    });
+    setStats(newStats);
+  }, [habits]);
 
-  // Recalculate stats when habits change and save all user data
+  // Save user data whenever it changes (and user is logged in)
   useEffect(() => {
-    if (currentUser) {
-      const newStats = new Map<string, HabitStats>();
-      habits.forEach(habit => {
-        newStats.set(habit.id, calculateStats(habit));
-      });
-      setStats(newStats);
-      authService.saveUserData(currentUser.email, userData);
+    if (currentUser && !isLoadingAuth) {
+      const userData = {
+        habits,
+        plantGrowthLevel,
+        moodLogs
+      };
+      authService.saveUserData(currentUser.uid, userData);
     }
-  }, [habits, currentUser, userData]);
+  }, [habits, plantGrowthLevel, moodLogs, currentUser, isLoadingAuth]);
+
   
-  // Save all user data when plant growth or mood logs change
-  useEffect(() => {
-    if (currentUser) {
-      authService.saveUserData(currentUser.email, userData);
-    }
-  }, [plantGrowthLevel, moodLogs, currentUser, userData]);
-  
-  const handleLoginSuccess = (user: User) => {
+  const handleLoginSuccess = async (user: User) => {
     setCurrentUser(user);
-    const data = authService.loadUserData(user.email);
-    setHabits(data.habits);
-    setPlantGrowthLevel(data.plantGrowthLevel);
+    setIsLoadingAuth(true); // Show loading state while fetching data
+    const data = await authService.loadUserData(user.uid);
+    setHabits(data.habits || []);
+    setPlantGrowthLevel(data.plantGrowthLevel || 0);
     setMoodLogs(data.moodLogs || []);
     setActiveView('habits');
+    setIsLoadingAuth(false);
   };
   
-  const handleSignOut = () => {
-    authService.signOut();
-    setCurrentUser(null);
-    setHabits([]);
-    setPlantGrowthLevel(0);
-    setMoodLogs([]);
+  const handleSignOut = async () => {
+    await authService.signOut();
+    // The auth listener in the first useEffect will handle resetting state.
   };
 
   const handleLog = (habitId: string, status: LogStatus) => {
@@ -149,7 +154,6 @@ const App: React.FC = () => {
     setFocusHabit(null);
   };
   
-  // --- New Mood Handlers ---
   const handleSaveMoodLog = (log: MoodLog) => {
     setMoodLogs(prev => {
         const existingIndex = prev.findIndex(l => l.date === log.date);
